@@ -1,17 +1,22 @@
-import { action, makeAutoObservable, runInAction } from 'mobx'
-
-// ! use arrow functions to lock the context, binding won't cut
+import { makeAutoObservable, runInAction } from 'mobx'
+import { getShortAddress } from '../helpers'
 
 class Account {
-	address: null | any = null
+	address: null | string = null
+	tokens: Token[] = []
+	isLoading = false
 
 	constructor() {
 		makeAutoObservable(this)
 
-		if (this.isWalletInjected()) {
+		if (this._isWalletInjected) {
 			this.listenToAccountChange()
-			this.connect()
+			this.connectAccounts()
 		}
+	}
+
+	get _isWalletInjected() {
+		return typeof window.ethereum !== 'undefined'
 	}
 
 	get isLoggedIn() {
@@ -19,23 +24,60 @@ class Account {
 	}
 
 	get shortAddress() {
-		return `${this.address.slice(0, 5)}...${this.address.slice(-4)}`
+		return getShortAddress(this.address)
 	}
 
-	isWalletInjected = () => typeof window.ethereum !== 'undefined'
+	get NFTs() {
+		const result: DisplayedNFT[] = []
 
-	setToFirstAccount = (addresss: string[]) => runInAction(() => (this.address = addresss[0] || null))
+		this.tokens
+			.filter(token => token.type === 'nft')
+			.forEach(token => {
+				const { contract_address, nft_data } = token
 
-	listenToAccountChange = () => window.ethereum.on('addresssChanged', this.setToFirstAccount)
+				;(nft_data || []).forEach(nft => {
+					const { token_id = '', external_data: { name = '', description = '', image = '' } = {} } = nft
 
-	connect = () =>
-		this.isWalletInjected() &&
+					result.push({
+						contract_address,
+						token_id: token_id || 'failed_to_get_token_id',
+						name: name || 'failed_to_get_name',
+						description,
+						image,
+					})
+				})
+			})
+
+		return result
+	}
+
+	loadFirstAccount = (addresss: string[]) => {
+		runInAction(() => (this.address = addresss[0] || null))
+		this.getTokens()
+	}
+
+	connectAccounts = async (): Promise<string[]> =>
+		this._isWalletInjected &&
 		window.ethereum
 			.request({ method: 'eth_requestAccounts' })
-			.then(this.setToFirstAccount)
+			.then(this.loadFirstAccount)
 			.catch((e: Error) => console.log(e))
+
+	listenToAccountChange = () => window.ethereum.on('accountsChanged', this.loadFirstAccount)
+
+	getTokens = async () => {
+		if (this.isLoggedIn) {
+			runInAction(() => (this.isLoading = true))
+
+			fetch(`https://api.covalenthq.com/v1/1/address/${this.address}/balances_v2/?key=ckey_23fadff2a1b04277afa6968c581`)
+				.then(resp => resp.json())
+				.then(json => runInAction(() => (this.tokens = json.data.items)))
+				.catch(console.log)
+				.finally(() => {
+					runInAction(() => (this.isLoading = false))
+				})
+		}
+	}
 }
 
-const singleton = new Account()
-
-export default singleton
+export default new Account()
