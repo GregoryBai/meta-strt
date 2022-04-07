@@ -51,6 +51,8 @@ class Account {
 		return result
 	}
 
+	listenToAccountChange = () => window.ethereum.on('accountsChanged', this.loadFirstAccount)
+
 	loadFirstAccount = (addresss: string[]) => {
 		runInAction(() => (this.address = addresss[0] || null))
 		this.getTokens()
@@ -63,9 +65,7 @@ class Account {
 			.then(this.loadFirstAccount)
 			.catch((e: Error) => console.log(e))
 
-	listenToAccountChange = () => window.ethereum.on('accountsChanged', this.loadFirstAccount)
-
-	getTokens = async () => {
+	getTokens = () => {
 		if (this.isLoggedIn) {
 			runInAction(() => (this.isLoading = true))
 
