@@ -1,28 +1,41 @@
-import { makeAutoObservable } from 'mobx'
+import { action, makeAutoObservable, runInAction } from 'mobx'
+
+// ! use arrow functions to lock the context, binding won't cut
 
 class Account {
-	account: null | any
+	address: null | any = null
 
 	constructor() {
 		makeAutoObservable(this)
+
+		if (this.isWalletInjected()) {
+			this.listenToAccountChange()
+			this.connect()
+		}
 	}
 
 	get isLoggedIn() {
-		return this.account !== null
+		return this.address !== null
 	}
 
-	async connect() {
-		if (typeof window.ethereum !== 'undefined') {
-			try {
-				const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' })
-				console.log(accounts)
-				this.account = accounts[0]
-			} catch (e) {
-				// notify error
-				console.log(e)
-			}
-		}
+	get shortAddress() {
+		return `${this.address.slice(0, 5)}...${this.address.slice(-4)}`
 	}
+
+	isWalletInjected = () => typeof window.ethereum !== 'undefined'
+
+	setToFirstAccount = (addresss: string[]) => runInAction(() => (this.address = addresss[0] || null))
+
+	listenToAccountChange = () => window.ethereum.on('addresssChanged', this.setToFirstAccount)
+
+	connect = () =>
+		this.isWalletInjected() &&
+		window.ethereum
+			.request({ method: 'eth_requestAccounts' })
+			.then(this.setToFirstAccount)
+			.catch((e: Error) => console.log(e))
 }
 
-export default new Account()
+const singleton = new Account()
+
+export default singleton
